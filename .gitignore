@@ -50,5 +50,9 @@ SIH_139_Demo.mov
 test_artifacts/
 *.log
 
+# PDF generation scripts
+build_code_showcase_pdf.py
+build_one_page_pdf.py
+
 # Agent Scratch & Workspace Memory
 /.agent/
