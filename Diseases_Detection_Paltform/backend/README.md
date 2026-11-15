@@ -1,63 +1,221 @@
-# Backend API - Hybrid Quantum Machine Learning Platform
+# Backend Service — FastAPI & Beanie ODM Architecture
 
-The backend of the Hybrid QML Platform is a high-performance Python application built with **FastAPI**. It handles complex computational workloads including classical data preprocessing, machine learning, quantum circuit simulation (PennyLane), and intelligent agent interaction.
+The backend for the **Hybrid QML Disease Detection Platform** is a high-performance, asynchronous REST service built with **FastAPI** and **Python 3.11**. It manages biomedical dataset ingestion, automated data preprocessing, classical machine learning pipelines, and PennyLane quantum circuit simulation.
 
-## Architecture & Tech Stack
+---
 
-- **Framework**: FastAPI (Asynchronous, High Concurrency)
-- **Database**: MongoDB (Beanie ODM) for flexible document storage of models, datasets, and configurations.
-- **Storage Engine**: MinIO (S3-compatible) for storing massive CSV files, serialized ML pipelines, and model weights.
-- **Task Queue**: Celery + Redis for asynchronous background processing (model training, quantum simulation).
-- **Quantum Backend**: PennyLane (`default.qubit`) for Variational Quantum Classifier construction and simulation.
-- **LLM Engine**: Ollama (Local LLM) used dynamically by LangChain agents to suggest data preprocessing steps without sending patient data to cloud providers.
+## Architectural Highlights
 
-## Implementation Details
+- **Framework**: FastAPI (>=0.111.0) on Uvicorn ASGI server with uvloop event loops.
+- **Database**: MongoDB 6.0/7.0 via Motor asynchronous driver and Beanie Object-Document Mapper (ODM) with Pydantic v2 validation.
+- **Authentication**: Stateless HS256 JWT Bearer tokens with memory-hard Argon2id password hashing (`argon2-cffi`).
+- **Quantum Engine**: PennyLane 0.38+ with parameterized QNodes running on pure statevector (`default.qubit`) and open-system density matrix (`default.mixed`) simulator devices.
+- **Artifact Handling**: `LocalArtifactStorage` with strict canonical path traversal validation (`_resolve_safe_path()`) saving files under `ARTIFACT_ROOT` (`/app/artifacts`).
 
-The backend adheres to a strict Service-Oriented Architecture (SOA):
+---
 
-1. **API Layer (`app/api/`)**: Defines REST endpoints, handles HTTP requests/responses, and enforces Pydantic schema validation.
-2. **Service Layer (`app/services/`)**: Contains the core business logic. API routes inject these services via FastAPI Dependencies.
-3. **Repository Layer (`app/repositories/`)**: Abstracts database queries. Directly interfaces with the Beanie ODM to isolate MongoDB logic.
-4. **Machine Learning (`app/ml/` & `app/quantum/`)**: Pure Python modules wrapping Scikit-Learn and PennyLane logic to ensure models remain decoupled from the web framework.
+## Backend Subsystem Architecture
 
-### Step-by-Step Execution Flow
+```mermaid
+flowchart TD
+    subgraph Gateway ["HTTP Gateway (FastAPI Lifespan)"]
+        FastAPIApp["FastAPI (app/main.py)"]
+        CORSMiddleware["CORS Middleware"]
+        ExceptionHandlers["AppException & Global Error Handlers"]
+    end
 
-1. **Dataset Upload**: The user uploads a CSV. The API streams it directly to MinIO, and a `DatasetVersion` document is saved in MongoDB.
-2. **Preprocessing**: The `PreprocessingService` queries Ollama to analyze dataset headers and suggest Imputation (Mean/Median) and Scaling (Standard/MinMax). The dataset is processed using Scikit-Learn pipelines, and the transformer artifacts are saved to MinIO.
-3. **Quantum Model Configuration**: The user configures a VQC model (number of qubits, ansatz type).
-4. **Training**: A Celery worker picks up the training job. It pulls the processed dataset from MinIO, constructs a PennyLane quantum circuit, and trains it using an optimizer (e.g., Adam/Adagrad). Training history is streamed back to MongoDB.
-5. **Evaluation & Prediction**: The trained model generates predictions and Explainable AI (XAI) metrics, storing results as an `Evaluation` document.
+    subgraph Security ["Security & Dependencies (app/core/)"]
+        JWTHandler["PyJWT HS256 (Access/Refresh Tokens)"]
+        Hasher["Argon2id Password Hasher"]
+        AuthDep["get_current_user Dependency"]
+    end
 
-## Configuration (.env)
+    subgraph APIRoutes ["REST API Layer (app/api/v1/)"]
+        R_Auth["/auth"]
+        R_Datasets["/datasets"]
+        R_Prep["/preprocessing"]
+        R_Features["/features"]
+        R_Models["/models"]
+        R_Training["/training"]
+        R_Pred["/predictions"]
+        R_Eval["/evaluation"]
+    end
 
-When running locally without Docker, you must configure a `.env` file in the `backend/` directory:
+    subgraph ServiceLayer ["Service Orchestration (app/services/)"]
+        S_Dataset["DatasetService"]
+        S_Prep["PreprocessingService"]
+        S_Training["TrainingService"]
+        S_Pred["PredictionService"]
+        S_Artifact["LocalArtifactStorage"]
+    end
+
+    subgraph ComputingLayer ["ML & Quantum Engines (app/ml/)"]
+        PennyLaneVQC["PennyLane VQC (QNode, AngleEmbedding)"]
+        ClassicalSVM["Scikit-Learn (Linear/RBF SVM, Logistic)"]
+        PreprocEngine["AI Preprocessing Engine"]
+    end
+
+    subgraph Persistence ["Persistence Layer (app/database/)"]
+        BeanieModels["Beanie ODM (14 Document Models)"]
+        MongoDB[(MongoDB Engine)]
+        DiskStorage[("/app/artifacts (Joblib, CSVs)")]
+    end
+
+    FastAPIApp --> CORSMiddleware --> ExceptionHandlers
+    ExceptionHandlers --> APIRoutes
+    APIRoutes --> AuthDep --> Security
+    APIRoutes --> ServiceLayer
+    
+    S_Dataset --> S_Artifact
+    S_Prep --> PreprocEngine
+    S_Training --> PennyLaneVQC & ClassicalSVM
+    S_Pred --> S_Artifact
+    
+    ServiceLayer --> BeanieModels --> MongoDB
+    S_Artifact --> DiskStorage
+```
+
+---
+
+## Directory Structure
+
+```text
+backend/
+├── app/
+│   ├── main.py                # Application entrypoint, lifespan, CORS, Beanie initialization
+│   ├── core/                  # Configuration, logging, JWT, and Argon2id security
+│   ├── api/                   # REST routing
+│   │   └── v1/                # Version 1 route endpoints (auth, datasets, training, etc.)
+│   ├── database/              # MongoDB connection & 14 Beanie ODM models
+│   │   └── models/            # User, Dataset, DatasetVersion, TrainingRun, Model, etc.
+│   ├── interfaces/            # Abstract base classes and protocol contracts
+│   ├── ml/                    # Quantum (VQC) and classical (SVM) model wrappers
+│   ├── agents/                # Integrated AI Preprocessing Agent & deterministic tools
+│   ├── services/              # Business logic (dataset, training, prediction, artifact services)
+│   └── workers/               # Background task definitions
+├── tests/                     # Pytest suite
+│   ├── api/                   # Route integration tests (auth, datasets, multi-tenant isolation)
+│   └── unit/                  # Unit tests (path traversal security, preprocessing tools)
+├── Dockerfile                 # Python 3.11 slim production container configuration
+├── requirements.txt           # Python package dependencies
+└── .env.example               # Starter environment variable template
+```
+
+---
+
+## Database Models (Beanie ODM)
+
+All document schemas inherit from `beanie.Document` with Pydantic v2 validation:
+
+| Collection / Model | Purpose | Primary Fields |
+|---|---|---|
+| `User` | User account identity | `email` (Indexed, unique), `password_hash`, `role`, `created_at` |
+| `Dataset` | High-level dataset container | `user_id` (Indexed), `name`, `disease_type`, `description` |
+| `DatasetVersion` | Immutable version of a dataset | `dataset_id`, `version_tag`, `row_count`, `column_count`, `storage_path` |
+| `PreprocessingRun` | Preprocessing execution log | `dataset_version_id`, `plan`, `operations_log`, `status` |
+| `PreprocessingArtifact`| Transformed data partitions | `preprocessing_run_id`, `split_type` (train/val/test), `file_path` |
+| `FeatureSelectionRun`| Feature importance record | `dataset_version_id`, `method`, `selected_features`, `scores` |
+| `Model` | Trained or default model metadata | `name`, `model_type` (VQC, SVM), `qubit_count`, `artifact_path` |
+| `TrainingRun` | Training run telemetry | `user_id`, `model_id`, `epochs`, `loss_curve`, `evaluation_metrics` |
+| `Prediction` | Inference record | `model_id`, `input_features`, `probability`, `risk_level` |
+| `PredictionFeedback` | Clinician validation feedback | `prediction_id`, `true_label`, `clinician_notes` |
+| `Experiment` | Multi-run benchmark group | `user_id`, `name`, `model_ids`, `comparison_matrix` |
+| `AuditLog` | Security and access audit record | `user_id`, `action`, `resource_type`, `timestamp` |
+
+---
+
+## API Documentation (`/api/v1`)
+
+| Method | Route | Description | Auth Required |
+|---|---|---|:---:|
+| `POST` | `/auth/register` | Register new clinician account | No |
+| `POST` | `/auth/login` | Login and receive Bearer JWT | No |
+| `POST` | `/auth/refresh` | Issue new access token using refresh token | No |
+| `GET` | `/auth/me` | Fetch active user profile | Yes |
+| `GET` | `/datasets` | List datasets owned by active user | Yes |
+| `POST` | `/datasets` | Create a dataset container | Yes |
+| `POST` | `/datasets/{id}/versions` | Upload a tabular CSV file | Yes |
+| `GET` | `/datasets/{id}/versions/{v_id}/analysis` | Get schema profiling and quality metrics | Yes |
+| `POST` | `/preprocessing/plan` | Generate AI or heuristic preprocessing plan | Yes |
+| `POST` | `/preprocessing/execute` | Execute deterministic transformations on data | Yes |
+| `POST` | `/preprocessing/ai/modify` | Natural-language modification of plan steps | Yes |
+| `POST` | `/features/select` | Run feature importance ranking (Mutual Info, SFS) | Yes |
+| `GET` | `/models` | List available models, trained estimators, and zoo | Yes |
+| `POST` | `/models/compare` | Compare metrics of two or more models | Yes |
+| `POST` | `/training` | Dispatch a model training run | Yes |
+| `GET` | `/training/{run_id}` | Poll real-time training status and loss curves | Yes |
+| `POST` | `/predictions` | Run calibrated inference on submitted features | Yes |
+| `GET` | `/quantum/devices` | Query available quantum simulator devices | Yes |
+| `GET` | `/health` | Liveness health probe | No |
+
+---
+
+## Environment Configuration
+
+Create a `.env` file in this directory based on `.env.example`:
 
 ```env
+# Application Runtime
 ENVIRONMENT=development
 LOG_LEVEL=INFO
 HOST=0.0.0.0
 PORT=8000
+
+# MongoDB Database Configuration
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DB=hybrid_qml_db
+
+# Security & Authentication
+JWT_SECRET=super_secret_jwt_key_change_in_production
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Local Storage
+ARTIFACT_ROOT=/app/artifacts
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+
+# Background Tasks & Workers
 REDIS_URL=redis://localhost:6379/0
-MINIO_URL=http://localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-JWT_SECRET=your_super_secret_key
+
+# LLM Preprocessing Engine
 LLM_PROVIDER=ollama
 LLM_BASE_URL=http://localhost:11434
 ```
 
-## How to Run (With Docker)
+---
 
-The backend is configured to be orchestrated entirely by Docker Compose from the root directory.
+## Local Development & Testing
 
-However, if you want to build and run *only* the backend container:
-
+### 1. Setup Virtual Environment
 ```bash
-cd backend
-docker build -t hybrid_qml_backend .
-docker run -p 8000:8000 --env-file .env hybrid_qml_backend
+python -m venv .venv
+# On Windows:
+.\.venv\Scripts\Activate.ps1
+# On Unix:
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
-Note: Running the backend in isolation requires MongoDB, Redis, MinIO, and Ollama to be accessible at the URLs specified in your `.env` file.
+### 2. Run Database
+Ensure a local MongoDB container is running:
+```bash
+docker run -d --name local-mongo -p 27017:27017 mongo:6.0
+```
+
+### 3. Run FastAPI Application
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+Open Swagger UI at `http://localhost:8000/api/v1/docs`.
+
+### 4. Execute Test Suite
+```bash
+python -m pytest tests/ -v
+```
+Tests include:
+- `tests/api/test_auth.py`: Registration, login, token refresh, invalid credentials.
+- `tests/api/test_datasets.py`: Upload, schema analysis, multi-user isolation verification.
+- `tests/api/test_preprocessing.py`: Plan generation, transformation pipeline, execution integrity.
+- `tests/unit/test_artifact_security.py`: Canonical path resolution and directory traversal protections.

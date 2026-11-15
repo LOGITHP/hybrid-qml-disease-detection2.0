@@ -1,93 +1,195 @@
-# Hybrid Quantum Machine Learning Platform for Early Disease Detection
+# Diseases Detection Platform — Full-Stack Application
 
-## Project Overview
+The production web application and clinical workbench for the **Hybrid Quantum Machine Learning Platform for Early Disease Detection**.
 
-This repository contains the complete implementation for the **Hybrid Quantum Machine Learning Platform for Early Disease Detection**, with an initial focus on early lung cancer detection using biomedical datasets. The platform fundamentally modernizes disease prediction by coupling robust classical Machine Learning preprocessing and models (SVMs, Random Forests) with cutting-edge Variational Quantum Classifiers (VQC) using PennyLane. 
+The platform provides a complete clinical workflow: tabular dataset ingestion, automated data quality analysis, leakage-free preprocessing with an autonomous AI agent, interactive quantum circuit design, and model training/evaluation benchmarking classical algorithms against Variational Quantum Classifiers (VQC).
 
-The architecture is designed as a highly scalable, containerized microservices platform utilizing a modern stack:
-- **Backend**: FastAPI, MongoDB (Beanie ODM), MinIO, Celery, Redis
-- **Frontend**: React, TypeScript, Vite, TailwindCSS
-- **Quantum & ML**: PennyLane, Scikit-Learn, Pandas, Numpy
-- **LLM Agent**: Ollama (Local Large Language Models) for intelligent data preprocessing recommendations and explainability.
+---
 
-## Repository Structure
+## Architecture Overview
 
-```text
-hybrid-qml-disease-detection/
-├── ai_preprocessing_agent/   # Standalone Python package for LLM-powered schema parsing & plan generation
-├── Diseases_Detection_Platform/
-│   ├── backend/                  # FastAPI microservice for ML & Quantum computation
-│   │   ├── app/                  # Application source code
-│   │   │   ├── api/v1/           # RESTful API Endpoints
-│   │   │   ├── core/             # Configuration, dependencies, and security
-│   │   │   ├── database/         # MongoDB (Beanie) ODM Models and Session management
-│   │   │   ├── ml/               # Classical ML pipelines (PCA, SVM, Imputation)
-│   │   │   ├── quantum/          # PennyLane VQC architecture (Ansatz, Angle Embedding)
-│   │   │   ├── repositories/     # Data Access Layer
-│   │   │   ├── schemas/          # Pydantic validation schemas
-│   │   │   └── services/         # Business logic layer
-│   │   ├── tests/                # Pytest suite
-│   │   ├── Dockerfile            # Backend container configuration
-│   │   └── requirements.txt      # Python dependencies
-│   ├── frontend/                 # React & Vite SPA UI
-│   │   ├── src/                  # UI source code
-│   │   │   ├── api/              # Axios API clients
-│   │   │   ├── components/       # Reusable UI components (Charts, Forms, CircuitDesigner)
-│   │   │   ├── pages/            # View components (Dashboard, Datasets, Models)
-│   │   │   ├── store/            # Zustand global state management
-│   │   │   └── styles/           # Tailwind and global CSS
-│   │   ├── Dockerfile            # Frontend container (Nginx)
-│   │   └── package.json          # Node dependencies
-│   ├── docker-compose.yml        # Orchestrates MongoDB, Redis, MinIO, Ollama, Backend, Frontend
-│   └── README.md                 # Project documentation
+The application is structured into decoupled frontend, backend, and database tiers orchestrated via Docker Compose:
+
+```mermaid
+flowchart TD
+    subgraph Client ["Frontend Single Page App (React 18 + Vite)"]
+        Browser["Clinician Browser"]
+        ReactRouter["React Router DOM (Protected Routes)"]
+        QueryClient["TanStack React Query Cache"]
+        CircuitUI["Quantum Circuit Designer (SVG)"]
+    end
+
+    subgraph Gateway ["Nginx Web Server (Port 3000)"]
+        Nginx["Nginx Reverse Proxy & Static Host"]
+    end
+
+    subgraph API ["Backend Web Service (FastAPI / Uvicorn Port 8000)"]
+        FastAPI["FastAPI REST API (/api/v1)"]
+        AuthModule["Auth & Security (JWT, Argon2id)"]
+        DatasetModule["Dataset Ingestion & Schema Profiling"]
+        AgentModule["AI Preprocessing Engine (LangGraph / Scikit)"]
+        QMLModule["PennyLane VQC Simulator (QNode)"]
+        CMLModule["Classical ML (Linear/RBF SVM, Logistic)"]
+    end
+
+    subgraph Database ["Database & Persistence Tier"]
+        MongoDB[("MongoDB 6.0 (Beanie ODM)")]
+        LocalDisk[("Mounted Artifact Storage (/app/artifacts)")]
+    end
+
+    Browser -->|Port 3000| Nginx
+    Nginx --> ReactRouter
+    ReactRouter --> QueryClient & CircuitUI
+    QueryClient -->|REST API HTTPS / JWT| FastAPI
+    
+    FastAPI --> AuthModule & DatasetModule & AgentModule & QMLModule & CMLModule
+    AuthModule & DatasetModule & AgentModule & QMLModule & CMLModule --> MongoDB
+    DatasetModule & AgentModule & QMLModule --> LocalDisk
 ```
 
-## Platform Accomplishments & Model Comparison
+---
 
-In building this platform, we established a rigorous benchmark comparing classical learning against quantum-enhanced learning:
+## Directory Structure
 
-1. **Data Handling & Preprocessing**: We developed a robust data ingestion pipeline capable of parsing tabular biomedical data. The pipeline leverages a localized Ollama LLM Agent to automatically recommend feature engineering strategies (handling missing values, standard scaling, and PCA).
-2. **Classical Baseline**: We implemented a Classical Support Vector Machine (SVM) and Random Forest classifier to serve as our baseline benchmark on the lung cancer datasets.
-3. **Variational Quantum Classifier (VQC)**: We constructed a parameterized quantum circuit using PennyLane (`default.qubit` simulator). The VQC utilizes Angle Embedding to map classical features into a high-dimensional Hilbert space, followed by Strongly Entangling Layers to train the model. 
-4. **Model Comparison**: 
-   - *Classical SVM* excels at rapid convergence and high baseline accuracy on linearly separable biomedical features.
-   - *Quantum VQC* demonstrates superior feature expressivity, specifically capturing complex, non-linear correlations in the patient data. Our hybrid approach shows promising theoretical advantages in parameter efficiency.
-5. **Zero Data Leakage Architecture**: Strict temporal and logical separation of training and testing data splits are enforced at the database level to ensure clinical validity.
+```text
+Diseases_Detection_Paltform/
+├── docker-compose.yml        # Multi-service stack (MongoDB, Redis, MinIO, Backend, Frontend)
+├── README.md                 # Platform documentation
+├── backend/                  # FastAPI asynchronous backend
+│   ├── app/
+│   │   ├── api/v1/           # REST endpoints: auth, datasets, prep, training, predictions
+│   │   ├── core/             # Configuration, logging, JWT security
+│   │   ├── database/models/  # 14 Beanie ODM MongoDB Document models
+│   │   ├── ml/               # PennyLane VQC & Scikit-Learn SVM wrappers
+│   │   ├── agents/           # Integrated AI Preprocessing Agent
+│   │   └── services/         # Dataset, training, prediction, artifact services
+│   ├── tests/                # Pytest unit and API integration tests
+│   ├── Dockerfile            # Python 3.11 slim container build
+│   └── requirements.txt      # Backend Python dependencies
+└── frontend/                 # React 18 + Vite + TypeScript frontend
+    ├── src/
+    │   ├── api/              # Strongly typed Axios API client modules
+    │   ├── components/       # CircuitDesigner, PreprocessingPlan, Navigation
+    │   ├── context/          # AuthContext for session management
+    │   ├── pages/            # Datasets, Preprocessing, Features, Models, Predictions
+    │   └── router.tsx        # React Router route configuration
+    ├── Dockerfile            # Multi-stage production container build (Node -> Nginx)
+    ├── nginx.conf            # Nginx SPA fallback configuration
+    └── package.json          # Node dependencies
+```
 
-## Recent Updates & Fixes
+---
 
-We have recently improved the robustness and UX of the training and model management pipeline:
-- **GPU-Accelerated Quantum Simulation**: The platform now enforces PennyLane's `lightning.gpu` (cuQuantum) simulator for VQC models by default when available, vastly speeding up circuit execution times for biomedical datasets.
-- **Improved UI and Session State**: Fixed an issue in the Training Wizard where stale dataset UUIDs were cached in `sessionStorage` and sent to the backend, causing 404 crashes. The UI now auto-clears stale state and securely ties downstream runs to validated Dataset Versions.
-- **Model Zoo Clarity**: Redesigned the Model Zoo page to display human-readable dataset names and version tags in the filter dropdowns and Model Cards instead of raw MongoDB Object IDs.
-- **System Dataset Permissions**: Fixed an authorization bug in `training_service.py` that inadvertently blocked users from training models on system-seeded datasets (e.g., the default Lung Cancer benchmark dataset).
-- **Background Task Resilience**: Wrapped Celery/FastAPI `BackgroundTasks` with global exception handlers. If a training run crashes (e.g., due to OOM errors or invalid configs), it is caught and safely marked as `failed` in the database, preventing "zombie" runs.
+## Technology Stack
 
-## How to Run (Docker Compose)
+| Tier | Technology | Purpose |
+|---|---|---|
+| **Frontend Framework** | React 18.3 + TypeScript | Interactive, type-safe clinical user interface |
+| **Frontend Tooling** | Vite 5.3 + Tailwind CSS | Fast development server, CSS utility design tokens |
+| **Frontend State** | TanStack React Query 5.50 | Server-state caching and background data synchronization |
+| **Backend Framework** | FastAPI 0.111 + Uvicorn | High-concurrency asynchronous RESTful API |
+| **Database ODM** | Beanie 1.26 + Motor 3.4 | Async ODM for MongoDB with Pydantic v2 schemas |
+| **Database Engine** | MongoDB 6.0 | Document store for dataset versions, training runs, and models |
+| **Quantum Computing** | PennyLane 0.38 | Parameterized quantum circuits, statevector & density matrix simulation |
+| **Classical ML** | Scikit-learn 1.5 | Classical SVM baselines, SFS feature selection, data transformers |
+| **Autonomous Agent** | LangGraph & Scikit-learn | Schema analysis, leakage-free transformation execution |
+| **Containerization** | Docker & Docker Compose | Multi-container orchestration and environment isolation |
 
+---
 
-The entire platform is heavily containerized. You do not need to install local databases or Python environments.
+## Implemented Workflows
 
-1. Ensure **Docker** and **Docker Compose** are installed and running on your system.
-2. Navigate to the root directory (`Diseases_Detection_Platform`).
-3. Run the complete stack in detached mode:
-   ```bash
-   docker compose up --build -d
-   ```
-4. **Services Mapping**:
-   - Frontend UI: `http://localhost:3000`
-   - Backend API Docs (Swagger): `http://localhost:8000/api/v1/docs`
-   - MinIO Console: `http://localhost:9001` (Credentials: minioadmin / minioadmin)
-   - MongoDB: `localhost:27017`
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Researcher / Clinician
+    participant Front as React Frontend
+    participant API as FastAPI Backend
+    participant Mongo as MongoDB
+    participant Disk as Artifact Storage
 
-To shut down the platform:
+    User->>Front: 1. Upload CSV Dataset
+    Front->>API: POST /api/v1/datasets/{id}/versions
+    API->>Disk: Store CSV file under /app/artifacts/
+    API->>Mongo: Save DatasetVersion & Schema Profile
+    API-->>Front: Return schema summary & target candidates
+
+    User->>Front: 2. Generate Preprocessing Plan
+    Front->>API: POST /api/v1/preprocessing/plan
+    API-->>Front: Return 8-step transformation strategy
+
+    User->>Front: 3. Configure Quantum Circuit & Train
+    Front->>API: POST /api/v1/training (VQC: 6 qubits, 2 layers)
+    API->>Disk: Split 70/15/15 & fit scaler strictly on train
+    API->>API: Execute PennyLane VQC QNode gradient optimization
+    API->>Disk: Save trained_model.joblib
+    API->>Mongo: Record TrainingRun metrics & loss curves
+    API-->>Front: Training complete notification
+
+    User->>Front: 4. Calibrated Prediction & Triage
+    Front->>API: POST /api/v1/predictions (patient inputs, threshold)
+    API->>Disk: Load fitted transformers & quantum parameters
+    API-->>Front: Return probability, risk tier, and provenance
+```
+
+---
+
+## Quick Start (Docker Compose)
+
+### 1. Prerequisites
+- Docker Engine 24.0+
+- Docker Compose v2.0+
+
+### 2. Launch Stack
+From this directory:
+```bash
+docker compose up --build -d
+```
+
+### 3. Verify Containers
+```bash
+docker compose ps
+```
+
+### 4. Service Endpoints
+| Service | URL | Credentials |
+|---|---|---|
+| **Web Dashboard** | [http://localhost:3000](http://localhost:3000) | `hqml@gmail.com` / `12345678` |
+| **FastAPI Swagger Docs** | [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs) | N/A |
+| **API Health Probe** | [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health) | N/A |
+| **MinIO Console** | [http://localhost:9001](http://localhost:9001) | `minioadmin` / `minioadmin` |
+| **MongoDB** | `localhost:27017` | Standard connection |
+
+To stop the platform:
 ```bash
 docker compose down
 ```
 
-## Troubleshooting
+---
 
-- **Large Dataset Upload Failures (Timeout or `413 Request Entity Too Large`)**:
-  The application Nginx proxy has been configured to accept bodies up to 100MB, and the frontend Axios client timeout is set to 5 minutes (300,000ms). If uploads fail or time out, verify your Docker Engine resources and network settings.
-- **Docker Compose Build Failures (`no such host`)**:
-  If a step fails with a DNS resolution error fetching from Docker Hub (e.g., `registry-1.docker.io`), this is a transient Docker networking issue. Retry the build step.
+## Local Development (Without Docker)
+
+### Backend Setup
+```bash
+cd backend
+python -m venv .venv
+# On Windows: .venv\Scripts\Activate.ps1 | On Unix: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend Setup
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+---
+
+## Troubleshooting & Verification
+
+- **Large Dataset Upload Failures (413 Request Entity Too Large):** Nginx has been configured with `client_max_body_size 100M;` and Axios client timeout is set to 5 minutes (`300,000ms`). Ensure Docker has sufficient memory allocated.
+- **Vite Proxy in Docker:** Ensure `VITE_API_BASE_URL` is set to `http://localhost:8000/api/v1` (or your public backend URL) during frontend production builds.

@@ -27,7 +27,7 @@ This directory contains pre-trained classical and quantum machine learning model
 
 ## 3. Metadata and Loading
 
-All models are cataloged with hyperparameters, feature lists, and provenance in [`metadata.json`](file:///backend/models/pretrained/metadata.json) and can be loaded dynamically using the loader utility in [`app/ml/loader.py`](file:///backend/app/ml/loader.py):
+All models are cataloged with hyperparameters, feature lists, and provenance in [`pretrained/metadata.json`](pretrained/metadata.json) and can be loaded dynamically using the loader utility in [`../app/ml/loader.py`](../app/ml/loader.py):
 
 ```python
 from app.ml.loader import pretrained_model_loader

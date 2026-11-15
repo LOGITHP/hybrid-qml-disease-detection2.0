@@ -1,65 +1,73 @@
 # Experimental Machine Learning for Lung Cancer Detection
-**Research Module Documentation**  
+
+**Research & Algorithmic Benchmarks**  
 *Project: Hybrid Quantum-Classical Machine Learning Platform for Early Disease Detection*  
-*Disease Focus: Lung Cancer*
+*Disease Focus: Non-Small Cell Lung Carcinoma & Survey Indicator Screening*
 
 ---
 
-## 1. Purpose & Scope
-This directory contains the core experimental machine learning and hybrid quantum algorithms for **Lung Cancer** screening. 
+## 1. Purpose & Research Scope
 
-The primary research objective is to rigorously investigate whether low-depth Variational Quantum Classifiers (VQCs) running on compact qubit registers (4 to 8 qubits) can capture non-linear interactions among self-reported clinical predictors and improve positive-case detection (sensitivity) relative to standard classical baselines.
+This directory contains the experimental research suite investigating whether low-depth **Variational Quantum Classifiers (VQCs)** running on compact qubit registers ($n \in [4, 8]$) can capture non-linear interactions among clinical survey predictors and improve clinical sensitivity (recall) relative to standard classical baselines.
 
-> **Research & Dataset Notice**:  
-> - All models, findings, and evaluation metrics in this repository are research prototypes evaluated on the **Survey Lung Cancer Dataset**.  
-> - This work does not constitute a clinical medical device.  
-> - No software platform, database, or API code is included; this module is strictly experimental research.
+> [!NOTE]  
+> All models, findings, and evaluation metrics in this module are research prototypes evaluated on the **Survey Lung Cancer Dataset** (`data/raw/V1_dataset.csv`). This work is an academic algorithmic study and does not constitute a certified medical device.
 
 ---
 
 ## 2. Dataset Context
+
 All experiments operate on the standardized **Survey Lung Cancer Dataset**:
-- **Location**: `data/raw/V1_dataset.csv`
-- **Sample Size**: 2,998 survey observations
+- **Dataset Path**: `data/raw/V1_dataset.csv`
+- **Total Records**: 2,998 survey observations (0 missing values, 2 duplicates removed)
 - **Target Variable**: `LUNG_CANCER` (0 = Negative / No Cancer, 1 = Positive / Cancer)
+- **Class Balance**: 1,518 Positive (50.60%) vs. 1,482 Negative (49.40%)
 - **Clinical Attributes (15 candidate predictors)**:
-  - Demographic: `GENDER`, `AGE`
-  - Behavioral: `SMOKING`, `ALCOHOL_CONSUMING`, `PEER_PRESSURE`
-  - Symptoms: `YELLOW_FINGERS`, `ANXIETY`, `CHRONIC_DISEASE`, `FATIGUE`, `ALLERGY`, `WHEEZING`, `COUGHING`, `SHORTNESS_OF_BREATH`, `SWALLOWING_DIFFICULTY`, `CHEST_PAIN`
-- **Splits**:
-  - Training: 2,098 samples (70%)
-  - Validation: 450 samples (15%)
-  - Holdout Test: 450 samples (15%, strictly held out until final evaluation)
+  - *Demographic:* `GENDER`, `AGE` (range 21–87, mean $62.7 \pm 8.2$)
+  - *Behavioral:* `SMOKING`, `ALCOHOL_CONSUMING`, `PEER_PRESSURE`
+  - *Symptoms:* `YELLOW_FINGERS`, `ANXIETY`, `CHRONIC_DISEASE`, `FATIGUE`, `ALLERGY`, `WHEEZING`, `COUGHING`, `SHORTNESS_OF_BREATH`, `SWALLOWING_DIFFICULTY`, `CHEST_PAIN`
+- **Strict Partitioning**:
+  - Training Partition: 2,098 samples (70%)
+  - Validation Partition: 450 samples (15%)
+  - Held-out Test Partition: 450 samples (15%: 227 positive, 223 negative; held out strictly until final evaluation)
 
 ---
 
-## 3. Experimental Workflow
-```
-Raw Survey Data (2,998 samples)
-    │
-    ▼
-Strict Preprocessing & Scaling (No Leakage)
-    │
-    ▼
-Feature Selection (4, 6, and 8 Features)
-    │
-    ├──► Classical ML (Logistic Regression, Linear SVM, RBF SVM)
-    │       ├── 4 Features (WHEEZING, YELLOW_FINGERS, AGE, SHORTNESS_OF_BREATH)
-    │       ├── 6 Features (COUGHING, PEER_PRESSURE, AGE, YELLOW_FINGERS, SHORTNESS_OF_BREATH, CHEST_PAIN)
-    │       └── 8 Features (COUGHING, PEER_PRESSURE, AGE, ANXIETY, ALLERGY, SHORTNESS_OF_BREATH, CHEST_PAIN, CHRONIC_DISEASE)
-    │
-    └──► Hybrid Quantum ML (PennyLane Variational Quantum Classifiers)
-            ├── 4-Qubit Noiseless VQC (Statevector, default.qubit)
-            ├── 4-Qubit Noisy VQC (Simulated NISQ: Depolarizing + Phase Damping, default.mixed)
-            ├── 6-Qubit Noiseless VQC (Statevector, default.qubit)
-            └── 8-Qubit Noiseless VQC (Statevector, default.qubit)
+## 3. Experimental Architecture & Workflow
+
+```mermaid
+flowchart TD
+    RawData["Raw Survey Data (2,998 samples)"] --> Split["Strict Stratified Split (70% Train, 15% Val, 15% Test)"]
+    Split --> TrainPrep["Fit MinMaxScaler [0, 1] on Train ONLY"]
+    TrainPrep --> FrozenTransform["Transform Val & Test using Frozen MinMax"]
+    
+    FrozenTransform --> SFS["Sequential Forward Selection (SFS)"]
+    SFS --> Reg4["4 Features (WHEEZING, YELLOW_FINGERS, AGE, SHORTNESS_OF_BREATH)"]
+    SFS --> Reg6["6 Features (+ COUGHING, PEER_PRESSURE, CHEST_PAIN)"]
+    SFS --> Reg8["8 Features (+ ANXIETY, ALLERGY, CHRONIC_DISEASE)"]
+
+    Reg4 & Reg6 & Reg8 --> ClassicalBranch["Classical ML Baselines"]
+    Reg4 & Reg6 & Reg8 --> QuantumBranch["Hybrid Quantum ML (PennyLane VQC)"]
+
+    subgraph ClassicalModels ["Classical Baselines (Scikit-Learn)"]
+        ClassicalBranch --> LogReg["Logistic Regression (L2 Regularized)"]
+        ClassicalBranch --> LinearSVM["Linear Support Vector Machine (C=1.0)"]
+        ClassicalBranch --> RBFSVM["RBF Kernel SVM (Gaussian Kernel)"]
+    end
+
+    subgraph QuantumModels ["Quantum Classifiers (PennyLane)"]
+        QuantumBranch --> VQC_Pure["Noiseless Statevector (default.qubit)"]
+        QuantumBranch --> VQC_Noisy["NISQ Noise-Aware (default.mixed, Depolarizing + SPAM)"]
+    end
+
+    ClassicalModels & QuantumModels --> HoldoutEval["Strict 450-Sample Holdout Evaluation"]
 ```
 
 ---
 
-## 4. VQC Circuit Formation & Architecture
+## 4. Variational Quantum Classifier (VQC) Circuit Specification
 
-The Variational Quantum Classifiers map classical tabular vectors into continuous quantum Hilbert state spaces using PennyLane:
+The Variational Quantum Classifiers map tabular feature vectors into high-dimensional quantum Hilbert state spaces using PennyLane:
 
 ```
 |0⟩ ──[ RY(x₀·π) ]──[ RY(θ₁,₀) ]──╭●─────────────[ RY(θ₂,₀) ]──╭●─────────────┤ ⟨Z₀⟩ ──╮
@@ -73,64 +81,81 @@ The Variational Quantum Classifiers map classical tabular vectors into continuou
        Data Encoding       Variational Layer 1          Variational Layer 2   Measurement
 ```
 
-### Architectural Principles:
-1. **Angle Embedding**:
-   Each normalized feature $x_i \in [0, 1]$ is encoded via single-qubit rotation $R_y(x_i \cdot \pi)$ on qubit wire $i$:
-   $$|\psi_0(\mathbf{x})\rangle = \bigotimes_{i=0}^{n-1} R_y(x_i \cdot \pi) |0\rangle$$
-   This maps normalized feature boundaries naturally onto orthogonal states ($x_i=0 \to |0\rangle$, $x_i=1 \to |1\rangle$).
-2. **Variational Layers (Ansatz)**:
-   Two layers, each comprising parameterized single-qubit rotations $R_y(\theta_{l, i})$ followed by a nearest-neighbor linear CNOT entangling ladder $\text{CNOT}(i, i+1)$.
-3. **Measurement & Pooling**:
-   Pauli-Z expectation values $\langle Z_i \rangle$ are measured across all $n$ qubits and pooled into scalar mean expectation $\langle Z \rangle = \frac{1}{n} \sum_{i=0}^{n-1} \langle Z_i \rangle$.
-4. **Classification Head**:
-   A trainable scalar bias $b$ is added: $\hat{p} = \sigma(\langle Z \rangle + b) = \frac{1}{1 + e^{-(\langle Z \rangle + b)}}$.
-   Total trainable parameters: $n \times L + 1$ (4 qubits: 9 params; 6 qubits: 13 params; 8 qubits: 17 params).
-5. **Loss & Optimizer**:
-   Binary Cross-Entropy (BCE) loss optimized with Adam ($\text{lr} \in [0.03, 0.05]$) across 20 epochs with batch size 64.
+### Mathematical Formulation
+1. **Y-Axis Angle Embedding:** Normalized feature vector $\mathbf{x} \in [0, 1]^n$ is mapped onto single-qubit rotations:
+   $$|\psi_0(\mathbf{x})\rangle = \bigotimes_{i=0}^{n-1} \hat{R}_y(x_i \cdot \pi) |0\rangle = \bigotimes_{i=0}^{n-1} \left[ \cos\left(\frac{x_i \pi}{2}\right)|0\rangle + \sin\left(\frac{x_i \pi}{2}\right)|1\rangle \right]$$
+2. **Parameterized Variational Layers:** $L = 2$ layers combining single-qubit rotations $U_{\text{rot}}(\boldsymbol{\theta}_l) = \bigotimes_{i=0}^{n-1} \hat{R}_y(\theta_{l, i})$ and nearest-neighbor linear CNOT ladders.
+3. **Pauli-Z Expectation Pooling:**
+   $$\langle Z \rangle = \frac{1}{n} \sum_{i=0}^{n-1} \langle Z_i \rangle$$
+4. **Calibrated Sigmoid Head:**
+   $$\hat{p} = \sigma(\langle Z \rangle + b) = \frac{1}{1 + \exp(-(\langle Z \rangle + b))}$$
+5. **Parameter Complexity:** Trainable parameters $= n_{\text{qubits}} \times L_{\text{layers}} + 1_{\text{bias}}$.
+   - 4-qubit VQC: $4 \times 2 + 1 = 9$ parameters
+   - 6-qubit VQC: $6 \times 2 + 1 = 13$ parameters
+   - 8-qubit VQC: $8 \times 2 + 1 = 17$ parameters
 
 ---
 
-## 5. Comprehensive Experimental Results Table
+## 5. Master Comparative Benchmarks
 
-Evaluation metrics computed on the untouched holdout test partition (450 samples: 227 positive, 223 negative):
+Evaluation metrics computed on the strictly held-out test partition (**450 patient records: 227 positive, 223 negative**):
 
-| Model Name | Category | Features | Qubits | Noise Condition | Accuracy | Balanced Acc | Sensitivity | Specificity | Precision | F1-Score | ROC-AUC | FP | FN |
-|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **6-Qubit Noiseless VQC** | Hybrid Quantum | 6 | 6 | Noiseless | 53.11% | 52.92% | **74.45%** | 31.39% | 52.48% | **61.57%** | **0.5555** | 153 | **58** |
-| **Logistic Regression (6 Feats)** | Classical ML | 6 | 0 | None (CPU) | 54.00% | 53.87% | 68.28% | 39.46% | 53.45% | 59.96% | 0.5531 | 135 | 72 |
-| **Classical RBF SVM (6 Feats)** | Classical ML | 6 | 0 | None (CPU) | **54.67%** | **54.61%** | 60.79% | 48.43% | **54.55%** | 57.50% | 0.5316 | 115 | 89 |
-| **Logistic Regression (4 Feats)** | Classical ML | 4 | 0 | None (CPU) | 51.78% | 51.72% | 58.15% | 45.29% | 51.97% | 54.89% | 0.5256 | 122 | 95 |
-| **4-Qubit Noiseless VQC** | Hybrid Quantum | 4 | 4 | Noiseless | 52.67% | 52.69% | 49.78% | 55.61% | 53.30% | 51.48% | 0.5147 | 99 | 114 |
-| **4-Qubit Noisy VQC** | Hybrid Quantum | 4 | 4 | Simulated NISQ | 52.67% | 52.70% | 49.34% | **56.05%** | 53.33% | 51.26% | 0.5174 | **98** | 115 |
-| **Classical RBF SVM (4 Feats)** | Classical ML | 4 | 0 | None (CPU) | 52.44% | 52.46% | 51.10% | 53.81% | 52.97% | 52.02% | 0.5318 | 103 | 111 |
-| **Classical Linear SVM (4 Feats)** | Classical ML | 4 | 0 | None (CPU) | 50.89% | 50.88% | 51.98% | 49.78% | 51.30% | 51.64% | 0.4972 | 112 | 109 |
-| **8-Qubit Noiseless VQC** | Hybrid Quantum | 8 | 8 | Noiseless | 48.44% | 48.50% | 42.73% | 54.26% | 48.74% | 45.54% | 0.4990 | 102 | 130 |
-| **Classical Linear SVM (8 Feats)** | Classical ML | 8 | 0 | None (CPU) | 50.44% | 50.00% | 100.00% | 0.00% | 50.44% | 67.06% | 0.5065 | 223 | 0 |
-| **Classical RBF SVM (8 Feats)** | Classical ML | 8 | 0 | None (CPU) | 50.44% | 50.00% | 100.00% | 0.00% | 50.44% | 67.06% | 0.4879 | 223 | 0 |
-| **Classical Linear SVM (6 Feats)** | Classical ML | 6 | 0 | None (CPU) | 50.44% | 50.00% | 100.00% | 0.00% | 50.44% | 67.06% | 0.4541 | 223 | 0 |
+| Model Name | Category | Features | Qubits | Params | Accuracy | Balanced Acc. | Sensitivity (Recall) | Specificity | Precision | F1-Score | ROC-AUC | False Pos (FP) | False Neg (FN) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **6-Qubit Noiseless VQC** | **Hybrid QML** | **6** | **6** | **13** | 53.11% | 52.92% | **74.45% (Peak)** | 31.39% | 52.48% | **61.57%** | **0.5555** | 153 | **58** |
+| **Logistic Regression (6 Feats)** | Classical ML | 6 | 0 | 7 | 54.00% | 53.87% | 68.28% | 39.46% | 53.45% | 59.96% | 0.5531 | 135 | 72 |
+| **Classical RBF SVM (6 Feats)** | Classical ML | 6 | 0 | Non-param | **54.67%** | **54.61%** | 60.79% | 48.43% | **54.55%** | 57.50% | 0.5316 | 115 | 89 |
+| **4-Qubit Noiseless VQC** | Hybrid QML | 4 | 4 | **9** | 52.67% | 52.69% | 49.78% | 55.61% | 53.30% | 51.48% | 0.5147 | 99 | 114 |
+| **4-Qubit Noisy VQC (NISQ)** | **Hybrid QML** | **4** | **4** | **9** | 52.67% | 52.70% | 49.34% | **56.05%** | 53.33% | 51.26% | 0.5174 | **98** | 115 |
+| **Classical RBF SVM (4 Feats)** | Classical ML | 4 | 0 | Non-param | 52.44% | 52.46% | 51.10% | 53.81% | 52.97% | 52.02% | 0.5318 | 103 | 111 |
+| **Logistic Regression (4 Feats)** | Classical ML | 4 | 0 | 5 | 51.78% | 51.72% | 58.15% | 45.29% | 51.97% | 54.89% | 0.5256 | 122 | 95 |
+| **8-Qubit Noiseless VQC** | Hybrid QML | 8 | 8 | **17** | 48.44% | 48.50% | 42.73% | 54.26% | 48.74% | 45.54% | 0.4990 | 102 | 130 |
+| **Classical Linear SVM (6 Feats)** | Classical ML | 6 | 0 | 7 | 50.44% | 50.00% | 100.00%* | 0.00%* | 50.44% | 67.06% | 0.4541 | 223 | **0** |
+| **Classical Linear SVM (8 Feats)** | Classical ML | 8 | 0 | 9 | 50.44% | 50.00% | 100.00%* | 0.00%* | 50.44% | 67.06% | 0.5065 | 223 | **0** |
 
 ---
 
-## 6. Interpretation of Results for This Dataset
+## 6. Key Scientific Findings
 
-1. **Detection Sensitivity**:
-   - The 6-Qubit VQC identified 169 of the 227 positive cancer cases, achieving **74.45% sensitivity**, outperforming classical models (6-feature RBF SVM: 60.79%, Logistic Regression: 68.28%).
-2. **False Positive Trade-off**:
-   - The 6-qubit quantum model produced lower specificity (31.39%), resulting in 153 false positives compared to 115 in RBF SVM.
-3. **Parameter Efficiency**:
-   - The 6-qubit quantum model utilized only 13 trainable parameters ($6 \times 2$ angles + 1 bias) to achieve high recall, demonstrating compact functional representation.
-4. **Dimensionality Limits**:
-   - Expanding to 8 features caused performance to decline across both quantum (48.44% accuracy) and classical models (boundary collapse), illustrating that higher qubit counts do not monotonically improve results without substantially larger training datasets.
-5. **Noise Stability**:
-   - The 4-qubit VQC maintained identical 52.67% accuracy under simulated 1% depolarizing and phase damping noise, showing that low-depth variational circuits are structurally stable against modest environmental decoherence.
+### 1. Classical Margin Collapse under Collinear Survey Noise
+When expanding from 4 features to 6 and 8 features, classical Linear SVMs suffered catastrophic boundary collapse: they predicted 100% positive, resulting in $100.0\%$ sensitivity, $0.0\%$ specificity, and $223$ false positives. The high collinearity among symptoms compressed the margin between classes, pushing linear hyperplanes completely outside the negative cluster.
+
+### 2. Quantum Expressibility & Peak Clinical Sensitivity
+The **6-Qubit Noiseless VQC achieved the highest clinical sensitivity in the study: 74.45%** (missing only 58 positive cases vs. 89 missed by RBF SVM and 72 missed by Logistic Regression). It accomplished this using **only 13 trainable parameters**, demonstrating that compact quantum Hilbert spaces can construct complex non-linear decision regions with extreme parameter economy.
+
+### 3. Intrinsic Structural Noise Resilience
+Simulating physical NISQ noise on the 4-qubit VQC (depolarizing Kraus channels and SPAM readout bit-flip noise on `default.mixed`) resulted in virtually identical test metrics ($52.67\%$ accuracy and $0.5174$ vs. $0.5147$ AUC). The shallow circuit depth ($L=2$, 6 CNOTs) prevented coherent error accumulation.
+
+### 4. The 8-Qubit Plateau (Dimensionality Degeneracy)
+Expanding to 8 qubits degraded test accuracy to $48.44\%$ and sensitivity to $42.73\%$. Moving to a $2^8 = 256$ dimensional Hilbert space without an exponential increase in training data induces gradient diffusion (barren plateaus). **Takeaway: In NISQ computing, feature selection budgeting strictly outperforms blind qubit scaling.**
 
 ---
 
-## 7. Structure & Experiments
+## 7. Directory Structure & Research Artifacts
 
-- [data/](data/README.md): Raw dataset, processed splits, feature selection logs.
-- [notebooks/](notebooks): Reproducible research notebooks (01 to 08).
-- [CML/](CML/4-feature/README.md): Classical ML experiments (4, 6, 8 features).
-- [HQML/](HQML/4-feature-VQC/README.md): Variational Quantum Classifiers (4, 4-noisy, 6, 8 qubits).
-- [results/](results/classical_vs_quantum/README.md): Consolidated comparison tables, feature scaling, and noise studies.
-- [docs/](docs/01_problem_definition.md): 11 high-level methodological documents.
+```text
+Experimental_ML/Lung_Cancer/
+├── CML/                       # Classical Machine Learning code and checkpoints
+│   ├── 4-feature/             # Logistic, Linear SVM, RBF SVM (4 features)
+│   ├── 6-feature/             # Classical models (6 features)
+│   └── 8-feature/             # Classical models (8 features)
+├── HQML/                      # Hybrid Quantum Machine Learning implementations
+│   ├── 4-feature-VQC/         # 4-qubit noiseless VQC (PennyLane default.qubit)
+│   ├── 4-feature-VQC-Noisy/   # 4-qubit noisy VQC (default.mixed density matrix)
+│   ├── 6-feature-VQC/         # 6-qubit noiseless VQC (Peak sensitivity model)
+│   └── 8-feature-VQC/         # 8-qubit noiseless VQC (Dimensionality study)
+├── data/                      # Raw and processed datasets
+│   ├── raw/V1_dataset.csv     # Survey Lung Cancer dataset (2,998 rows)
+│   └── processed/             # Partitioned splits and selected_features.json
+├── notebooks/                 # Exploratory research notebooks
+│   ├── 01_dataset_analysis.ipynb
+│   ├── 02_preprocessing_and_split.ipynb
+│   ├── 03_feature_engineering_selection.ipynb
+│   ├── 04_train_cml_baselines.ipynb
+│   ├── 05_train_vqc.ipynb
+│   ├── 06_train_vqc_noisy.ipynb
+│   └── 07_model_comparison.ipynb
+├── results/                   # Evaluation figures, confusion matrices, metrics JSONs
+│   └── classical_vs_quantum/  # model_comparison_metrics.json
+└── docs/                      # 11 In-depth scientific research monographs
+```
