@@ -1,0 +1,349 @@
+import { apiClient } from './client';
+import {
+  User,
+  AuthResponse,
+  Dataset,
+  DatasetVersion,
+  DatasetAnalysis,
+  PreprocessingPlan,
+  PreprocessingPlanStep,
+  PreprocessingRunResult,
+  FeatureSelectionRun,
+  Model,
+  ModelVersion,
+  TrainingRun,
+  QuantumDevice,
+  PredictionResponse,
+  ComprehensiveComparisonResponse,
+  Experiment,
+  Artifact,
+  SystemHealth,
+} from '../types';
+
+export const authApi = {
+  login: async (credentials: { username: string; password: string }): Promise<AuthResponse> => {
+    const payload = {
+      email: credentials.username,
+      password: credentials.password,
+    };
+    const res = await apiClient.post<AuthResponse>('/auth/login', payload);
+    return res.data;
+  },
+
+  register: async (payload: {
+    email: string;
+    password: string;
+    full_name: string;
+    role?: string;
+  }): Promise<User> => {
+    const res = await apiClient.post<{ data: User }>('/auth/register', payload);
+    return res.data.data;
+  },
+
+  me: async (): Promise<User> => {
+    const res = await apiClient.get<User>('/auth/me');
+    return res.data;
+  },
+};
+
+export const datasetsApi = {
+  list: async (): Promise<Dataset[]> => {
+    const res = await apiClient.get<Dataset[]>('/datasets');
+    return res.data;
+  },
+
+  get: async (id: string): Promise<Dataset> => {
+    const res = await apiClient.get<Dataset>(`/datasets/${id}`);
+    return res.data;
+  },
+
+  create: async (payload: { name: string; description?: string }): Promise<Dataset> => {
+    const res = await apiClient.post<{ data: Dataset }>('/datasets', payload);
+    return res.data.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/datasets/${id}`);
+  },
+
+  uploadVersion: async (
+    datasetId: string,
+    file: File,
+    versionTag: string = 'v1.0'
+  ): Promise<DatasetVersion> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('version_tag', versionTag);
+    const res = await apiClient.post<{ data: DatasetVersion }>(
+      `/datasets/${datasetId}/versions`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000,
+      }
+    );
+    return res.data.data;
+  },
+
+  analyzeVersion: async (datasetId: string, versionId: string, targetColumn?: string): Promise<DatasetAnalysis> => {
+    const res = await apiClient.get<DatasetAnalysis>(
+      `/datasets/${datasetId}/versions/${versionId}/analysis`,
+      { params: targetColumn ? { target_column: targetColumn } : undefined }
+    );
+    return res.data;
+  },
+};
+
+export const preprocessingApi = {
+  generatePlan: async (payload: {
+    dataset_version_id: string;
+    target_column?: string;
+  }): Promise<PreprocessingPlan> => {
+    const res = await apiClient.post<{ data: PreprocessingPlan }>('/preprocessing/plan', payload);
+    return res.data.data;
+  },
+
+  modifyPlan: async (payload: {
+    dataset_id: string;
+    dataset_version_id: string;
+    current_pipeline: PreprocessingPlan;
+    user_instruction: string;
+  }): Promise<{
+    status: 'valid' | 'invalid';
+    explanation: string;
+    changes: any[];
+    updated_pipeline?: PreprocessingPlan;
+    warnings: string[];
+  }> => {
+    const res = await apiClient.post<{ data: {
+      status: 'valid' | 'invalid';
+      explanation: string;
+      changes: any[];
+      updated_pipeline?: PreprocessingPlan;
+      warnings: string[];
+    } }>('/preprocessing/ai/modify', payload, { timeout: 450_000 });
+    return res.data.data;
+  },
+
+  executePlan: async (payload: {
+    dataset_version_id: string;
+    target_column?: string;
+    mode?: 'ai' | 'user_defined';
+    steps?: PreprocessingPlanStep[];
+    generation_method?: 'rule_based' | 'llm' | 'user_defined';
+    generation_provider?: string | null;
+  }): Promise<PreprocessingRunResult> => {
+    const res = await apiClient.post<{ data: PreprocessingRunResult }>('/preprocessing/execute', payload);
+    return res.data.data;
+  },
+
+  listArtifacts: async (datasetVersionId?: string): Promise<any[]> => {
+    const res = await apiClient.get<{ data: any[] }>('/preprocessing/artifacts', {
+      params: datasetVersionId ? { dataset_version_id: datasetVersionId } : undefined
+    });
+    return res.data.data;
+  },
+};
+
+export const featuresApi = {
+  selectFeatures: async (payload: {
+    dataset_version_id: string;
+    target_column?: string;
+    ranking_method: string;
+    k_features: number;
+    selected_features?: string[];
+  }): Promise<FeatureSelectionRun> => {
+    const res = await apiClient.post<{ data: FeatureSelectionRun }>('/features/select', payload);
+    return res.data.data;
+  },
+  listRuns: async (datasetVersionId?: string): Promise<any[]> => {
+    const res = await apiClient.get<{ data: any[] }>('/features/runs', {
+      params: datasetVersionId ? { dataset_version_id: datasetVersionId } : undefined
+    });
+    return res.data.data;
+  },
+  deleteRun: async (runId: string): Promise<void> => {
+    await apiClient.delete(`/features/runs/${runId}`);
+  },
+};
+
+export const modelsApi = {
+  list: async (): Promise<Model[]> => {
+    const res = await apiClient.get<Model[]>('/models');
+    return res.data;
+  },
+
+  listDefaults: async (): Promise<Model[]> => {
+    const res = await apiClient.get<Model[]>('/models/defaults');
+    return res.data;
+  },
+
+  get: async (id: string): Promise<Model> => {
+    const res = await apiClient.get<Model>(`/models/${id}`);
+    return res.data;
+  },
+
+  downloadArtifact: async (id: string): Promise<Blob> => {
+    const res = await apiClient.get(`/models/${id}/artifact`, { responseType: 'blob' });
+    return res.data as Blob;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/models/${id}`);
+  },
+
+  compare: async (modelIds: string[]): Promise<ComprehensiveComparisonResponse> => {
+    const res = await apiClient.post<ComprehensiveComparisonResponse>('/models/compare', {
+      model_ids: modelIds,
+    });
+    return res.data;
+  },
+};
+
+export const trainingApi = {
+  listRuns: async (): Promise<TrainingRun[]> => {
+    const res = await apiClient.get<TrainingRun[]>('/training');
+    return res.data;
+  },
+
+  startRun: async (payload: {
+    model_id: string;
+    dataset_version_id: string;
+    feature_selection_run_id: string;
+      preprocessing_run_id?: string;
+      hyperparameters?: Record<string, any>;
+      is_noisy_quantum?: boolean;
+      noise_params?: Record<string, number>;
+      custom_name?: string;
+  }): Promise<TrainingRun> => {
+    const res = await apiClient.post<{ data: TrainingRun }>('/training', payload, { timeout: 300000 });
+    return res.data.data;
+  },
+  getStatus: async (runId: string): Promise<TrainingRun> => {
+    const res = await apiClient.get<TrainingRun>(`/training/${runId}`);
+    return res.data;
+  },
+  cancelRun: async (runId: string): Promise<void> => {
+    await apiClient.delete(`/training/${runId}`);
+  },
+  pauseRun: async (runId: string): Promise<TrainingRun> => {
+    const res = await apiClient.post<{ data: TrainingRun }>(`/training/${runId}/pause`);
+    return res.data.data;
+  }
+};
+
+export const predictionsApi = {
+  predict: async (payload: {
+    model_id: string;
+    features: Record<string, any> | Record<string, any>[];
+    decision_threshold?: number;
+  }): Promise<PredictionResponse> => {
+    const res = await apiClient.post<PredictionResponse>('/predictions', payload);
+    return res.data;
+  },
+};
+
+export const quantumApi = {
+  listDevices: async (): Promise<QuantumDevice[]> => {
+    const res = await apiClient.get<QuantumDevice[]>('/quantum/devices');
+    return res.data;
+  },
+
+  submitJob: async (payload: {
+    device_id: string;
+    circuit_data: Record<string, any>;
+    shots?: number;
+  }): Promise<{ job_id: string; status: string }> => {
+    const res = await apiClient.post<{ data: { job_id: string; status: string } }>(
+      '/quantum/jobs',
+      payload
+    );
+    return res.data.data;
+  },
+
+};
+
+export const experimentsApi = {
+  list: async (): Promise<Experiment[]> => {
+    const res = await apiClient.get<Experiment[]>('/experiments');
+    return res.data;
+  },
+
+  create: async (payload: {
+    name: string;
+    description?: string;
+    tags?: string[];
+    dataset_id?: string;
+    dataset_version_id?: string;
+    dataset_name?: string;
+    preprocessing_run_id?: string;
+    feature_selection_run_id?: string;
+    target_column?: string;
+    selected_features?: string[];
+  }): Promise<Experiment> => {
+    const res = await apiClient.post<{ data: Experiment }>('/experiments', payload);
+    return res.data.data;
+  },
+
+  get: async (id: string): Promise<Experiment> => {
+    const res = await apiClient.get<Experiment>(`/experiments/${id}`);
+    return res.data;
+  },
+
+  compareRuns: async (experimentId: string, trainingRunIds: string[]): Promise<any> => {
+    const res = await apiClient.post<{ data: any }>(`/experiments/${experimentId}/compare`, {
+      training_run_ids: trainingRunIds,
+    });
+    return res.data.data;
+  },
+};
+
+export const artifactsApi = {
+  list: async (): Promise<Artifact[]> => {
+    const res = await apiClient.get<Artifact[]>('/artifacts');
+    return res.data;
+  },
+};
+
+export const healthApi = {
+  getHealth: async (): Promise<SystemHealth> => {
+    const res = await apiClient.get<SystemHealth>('/health');
+    return res.data;
+  },
+
+  getVersion: async (): Promise<{ version: string; environment: string }> => {
+    const res = await apiClient.get<{ version: string; environment: string }>('/version');
+    return res.data;
+  },
+};
+
+export const evaluationApi = {
+  getContext: async (trainingRunId: string): Promise<any> => {
+    const res = await apiClient.get(`/evaluation/${trainingRunId}`);
+    return res.data;
+  },
+  compare: async (trainingRunIds: string[]): Promise<any> => {
+    const res = await apiClient.post('/evaluation/compare', { training_run_ids: trainingRunIds });
+    return res.data;
+  }
+};
+
+
+export const feedbackApi = {
+  submit: async (payload: any): Promise<any> => {
+    const res = await apiClient.post<{ data: any }>('/feedback', payload);
+    return res.data.data;
+  },
+  listByModel: async (modelId: string): Promise<any[]> => {
+    const res = await apiClient.get<{ data: any[] }>(`/feedback/model/${modelId}`);
+    return res.data.data;
+  },
+  getStats: async (modelId: string): Promise<any> => {
+    const res = await apiClient.get<{ data: any }>(`/feedback/model/${modelId}/stats`);
+    return res.data.data;
+  },
+  triggerRetrain: async (modelId: string): Promise<any> => {
+    const res = await apiClient.post<{ data: any }>(`/feedback/model/${modelId}/retrain`);
+    return res.data.data;
+  }
+};

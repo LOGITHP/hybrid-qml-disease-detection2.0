@@ -1,0 +1,126 @@
+"""Dataset upload, management, and profiling endpoints."""
+
+from typing import List
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from app.core.dependencies import get_current_user, get_dataset_service
+from app.database.models.user import User
+from app.schemas.common import StandardResponse
+from app.schemas.dataset import DatasetCreate, DatasetResponse, DatasetVersionResponse
+from app.services.dataset_service import DatasetService
+
+router = APIRouter(prefix="/datasets", tags=["Datasets"])
+
+
+@router.post("", response_model=StandardResponse[DatasetResponse], status_code=status.HTTP_201_CREATED)
+async def create_dataset(
+    payload: DatasetCreate,
+    current_user: User = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service),
+):
+    """Register a new biomedical dataset container."""
+    dataset = await service.create_dataset(
+        user_id=str(current_user.id),
+        name=payload.name,
+        description=payload.description,
+    )
+    return StandardResponse(
+        message="Dataset created successfully.",
+        data=DatasetResponse.model_validate(dataset),
+    )
+
+
+@router.get("", response_model=List[DatasetResponse])
+async def list_datasets(
+    current_user: User = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service),
+):
+    """List datasets owned by the authenticated user."""
+    datasets = await service.list_user_datasets(user_id=str(current_user.id))
+    results = []
+    for d in datasets:
+        versions = await service.dataset_repo.list_versions(str(d.id))
+        d_dict = d.model_dump()
+        d_dict["versions"] = versions
+        results.append(DatasetResponse.model_validate(d_dict))
+    return results
+
+
+@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dataset(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service),
+):
+    """Delete a dataset and its versions."""
+    await service.delete_dataset(
+        dataset_id=dataset_id,
+        user_id=str(current_user.id),
+        is_admin=(current_user.role == "admin"),
+    )
+
+
+@router.get("/{dataset_id}", response_model=DatasetResponse)
+async def get_dataset(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service),
+):
+    """Retrieve metadata for a specific dataset."""
+    dataset = await service.get_dataset(
+        dataset_id=dataset_id,
+        user_id=str(current_user.id),
+        is_admin=(current_user.role == "admin"),
+    )
+    versions = await service.dataset_repo.list_versions(str(dataset.id))
+    d_dict = dataset.model_dump()
+    d_dict["versions"] = versions
+    return DatasetResponse.model_validate(d_dict)
+
+
+@router.post("/{dataset_id}/versions", response_model=StandardResponse[DatasetVersionResponse], status_code=status.HTTP_201_CREATED)
+async def upload_dataset_version(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    version_tag: str = Form("v1.0"),
+    current_user: User = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service),
+):
+    """Upload an immutable CSV version for a dataset."""
+    file_bytes = await file.read()
+    version = await service.upload_version(
+        dataset_id=dataset_id,
+        user_id=str(current_user.id),
+        file_bytes=file_bytes,
+        filename=file.filename or "dataset.csv",
+        version_tag=version_tag,
+        is_admin=(current_user.role == "admin"),
+    )
+    return StandardResponse(
+        message="Dataset version uploaded and validated.",
+        data=DatasetVersionResponse.model_validate(version),
+    )
+
+
+@router.get("/{dataset_id}/versions/{version_id}/analysis")
+async def analyze_dataset_version(
+    dataset_id: str,
+    version_id: str,
+    target_column: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service),
+):
+    """Compute privacy-preserving statistical summary without leaking patient data."""
+    version = await service.get_version(
+        version_id=version_id,
+        user_id=str(current_user.id),
+        is_admin=(current_user.role == "admin"),
+    )
+    if str(version.dataset_id) != dataset_id:
+        from app.core.exceptions import ResourceNotFoundError
+        raise ResourceNotFoundError("DatasetVersion", version_id)
+    return await service.analyze_version(
+        version_id=version_id,
+        user_id=str(current_user.id),
+        is_admin=(current_user.role == "admin"),
+        target_column=target_column,
+    )
